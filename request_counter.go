@@ -24,8 +24,9 @@ type StorageSchema struct {
 
 // RequestCounter holds the request count data
 type RequestCounter struct {
-	data sync.Map
-	cfg  Config
+	data     sync.Map
+	cfg      Config
+	writeMux sync.RWMutex
 }
 
 // writeJSONToFile writes the provided data to a JSON file
@@ -39,21 +40,29 @@ func (rc *RequestCounter) writeJSONToFile(data any) error {
 }
 
 // persist periodically saves the data to a file
-func (rc *RequestCounter) Persist() {
+func (rc *RequestCounter) PersistIntervaly() {
 	ticker := time.NewTicker(time.Duration(rc.cfg.persistInterval) * time.Second)
 	defer ticker.Stop()
 
 	for range ticker.C {
-		var storage StorageSchema
-		rc.data.Range(func(key, value interface{}) bool {
-			storage.Data = append(storage.Data, map[int64]int64{key.(int64): value.(int64)})
-			return true
-		})
-
-		if err := rc.writeJSONToFile(storage); err != nil {
-			log.Println("Error writing to file:", err)
-		}
+		rc.PersistOnFile()
 	}
+}
+
+func (rc *RequestCounter) PersistOnFile() {
+
+	log.Println("Persisting on file...")
+
+	var storage StorageSchema
+	rc.data.Range(func(key, value interface{}) bool {
+		storage.Data = append(storage.Data, map[int64]int64{key.(int64): value.(int64)})
+		return true
+	})
+
+	if err := rc.writeJSONToFile(storage); err != nil {
+		log.Println("Error writing to file:", err)
+	}
+
 }
 
 // fetch60SecCount returns the count of requests in the last 60 seconds
@@ -72,6 +81,8 @@ func (rc *RequestCounter) fetch60SecCount(now time.Time) int64 {
 // store increments the request count for the current second
 func (rc *RequestCounter) store(now time.Time) {
 	timestamp := now.Unix()
+	rc.writeMux.Lock()
+	defer rc.writeMux.Unlock()
 	if count, exist := rc.data.LoadOrStore(timestamp, int64(1)); exist {
 		rc.data.Store(timestamp, count.(int64)+1)
 	}

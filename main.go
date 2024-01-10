@@ -55,10 +55,14 @@ func LoadStorage(cfg Config) *RequestCounter {
 // main is the entry point of the application
 func main() {
 
+	// Setting up a channel to listen for termination signals
+	stopChan := make(chan os.Signal, 1)
+	signal.Notify(stopChan, syscall.SIGINT, syscall.SIGTERM)
+
 	cfg := Config{}
 
 	flag.IntVar(&cfg.windowSizeInSeconds, "window-size", 60, "Size of the moving window in seconds")
-	flag.IntVar(&cfg.persistInterval, "persist-interval", 1, "Interval for persisting data in seconds")
+	flag.IntVar(&cfg.persistInterval, "persist-interval", 5, "Interval for persisting data in seconds")
 	flag.IntVar(&cfg.dataTTL, "data-ttl", 60, "Time-to-live for data in seconds")
 	flag.StringVar(&cfg.storagePath, "storage-path", "storage/storage.json", "Path to the storage file")
 
@@ -66,7 +70,7 @@ func main() {
 
 	reqCounter := LoadStorage(cfg)
 
-	go reqCounter.Persist()
+	go reqCounter.PersistIntervaly()
 	go reqCounter.expiredRemover()
 
 	serverAddress := ":8080"
@@ -83,13 +87,10 @@ func main() {
 	// Log that the server has started
 	log.Printf("Server started successfully on http://localhost%s", serverAddress)
 
-	// Setting up a channel to listen for termination signals
-	stopChan := make(chan os.Signal, 1)
-	signal.Notify(stopChan, syscall.SIGINT, syscall.SIGTERM)
-
 	// Block until a signal is received
 	<-stopChan
 	log.Println("Shutting down server...")
+	reqCounter.PersistOnFile()
 
 	// Initiate graceful shutdown
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
