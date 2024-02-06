@@ -1,4 +1,4 @@
-package main
+package internal
 
 import (
 	"net/http"
@@ -7,9 +7,11 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	config "github.com/request-counter/configs"
 )
 
-var Cfg = Config{}.DefaultConfig()
+var Cfg = config.Config{}.DefaultConfig()
 
 func TestRequestCounterStoreAndFetch(t *testing.T) {
 	rc := RequestCounter{data: sync.Map{}, cfg: Cfg}
@@ -36,8 +38,8 @@ func TestPersistence(t *testing.T) {
 
 	cfg := Cfg
 
-	defer os.Remove(cfg.storagePath)
-	os.Remove(cfg.storagePath)
+	defer os.Remove(cfg.StoragePath)
+	os.Remove(cfg.StoragePath)
 
 	rc := RequestCounter{data: sync.Map{}, cfg: cfg}
 
@@ -48,7 +50,7 @@ func TestPersistence(t *testing.T) {
 
 	// Persist data to file
 	go rc.PersistIntervaly()
-	time.Sleep(time.Duration(5*cfg.persistInterval) * time.Second)
+	time.Sleep(time.Duration(5*cfg.PersistInterval) * time.Second)
 
 	// Load data from file
 	loadedRc := LoadStorage(cfg)

@@ -7,7 +7,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"flag"
 	"log"
 	"net/http"
@@ -15,42 +14,10 @@ import (
 	"os/signal"
 	"syscall"
 	"time"
+
+	config "github.com/request-counter/configs"
+	"github.com/request-counter/internal"
 )
-
-// ResponseJSON defines the structure of the response JSON
-type ResponseJSON struct {
-	Count int64 `json:"count"`
-}
-
-func convertStorageToSyncMap(storageSchema StorageSchema, rc *RequestCounter) *RequestCounter {
-
-	for _, mapData := range storageSchema.Data {
-		for key, val := range mapData {
-			rc.data.Store(key, val)
-		}
-	}
-
-	return rc
-}
-
-// LoadStorage loads the persisted data from the file
-func LoadStorage(cfg Config) *RequestCounter {
-	rc := RequestCounter{cfg: cfg}
-
-	storageFile, err := os.ReadFile(cfg.storagePath)
-	if err != nil {
-		log.Println("Error opening storage file:", err)
-		return &rc
-	}
-
-	var storageSchema StorageSchema
-	if err = json.Unmarshal(storageFile, &storageSchema); err != nil {
-		log.Println("Error parsing storage file:", err)
-		return &rc
-	}
-
-	return convertStorageToSyncMap(storageSchema, &rc)
-}
 
 // main is the entry point of the application
 func main() {
@@ -59,19 +26,19 @@ func main() {
 	stopChan := make(chan os.Signal, 1)
 	signal.Notify(stopChan, syscall.SIGINT, syscall.SIGTERM)
 
-	cfg := Config{}
+	cfg := config.Config{}
 
-	flag.IntVar(&cfg.windowSizeInSeconds, "window-size", 60, "Size of the moving window in seconds")
-	flag.IntVar(&cfg.persistInterval, "persist-interval", 5, "Interval for persisting data in seconds")
-	flag.IntVar(&cfg.dataTTL, "data-ttl", 60, "Time-to-live for data in seconds")
-	flag.StringVar(&cfg.storagePath, "storage-path", "storage/storage.json", "Path to the storage file")
+	flag.IntVar(&cfg.WindowSizeInSeconds, "window-size", 60, "Size of the moving window in seconds")
+	flag.IntVar(&cfg.PersistInterval, "persist-interval", 5, "Interval for persisting data in seconds")
+	flag.IntVar(&cfg.DataTTL, "data-ttl", 60, "Time-to-live for data in seconds")
+	flag.StringVar(&cfg.StoragePath, "storage-path", "storage/storage.json", "Path to the storage file")
 
 	flag.Parse()
 
-	reqCounter := LoadStorage(cfg)
+	reqCounter := internal.LoadStorage(cfg)
 
 	go reqCounter.PersistIntervaly()
-	go reqCounter.expiredRemover()
+	go reqCounter.ExpiredRemover()
 
 	serverAddress := ":8080"
 	http.HandleFunc("/", reqCounter.Count)

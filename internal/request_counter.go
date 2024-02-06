@@ -1,4 +1,4 @@
-package main
+package internal
 
 import (
 	"encoding/json"
@@ -7,6 +7,8 @@ import (
 	"os"
 	"sync"
 	"time"
+
+	config "github.com/request-counter/configs"
 )
 
 // // Constants for configuration
@@ -17,6 +19,11 @@ import (
 // 	cfg.storagePath         = "storage/storage.json"
 // )
 
+// ResponseJSON defines the structure of the response JSON
+type ResponseJSON struct {
+	Count int64 `json:"count"`
+}
+
 // StorageSchema represents the structure of data saved to the file
 type StorageSchema struct {
 	Data []map[int64]int64 `json:"data"`
@@ -25,7 +32,7 @@ type StorageSchema struct {
 // RequestCounter holds the request count data
 type RequestCounter struct {
 	data     sync.Map
-	cfg      Config
+	cfg      config.Config
 	writeMux sync.RWMutex
 }
 
@@ -36,12 +43,12 @@ func (rc *RequestCounter) writeJSONToFile(data any) error {
 		return err
 	}
 
-	return os.WriteFile(rc.cfg.storagePath, file, 0644)
+	return os.WriteFile(rc.cfg.StoragePath, file, 0644)
 }
 
 // persist periodically saves the data to a file
 func (rc *RequestCounter) PersistIntervaly() {
-	ticker := time.NewTicker(time.Duration(rc.cfg.persistInterval) * time.Second)
+	ticker := time.NewTicker(time.Duration(rc.cfg.PersistInterval) * time.Second)
 	defer ticker.Stop()
 
 	for range ticker.C {
@@ -69,7 +76,7 @@ func (rc *RequestCounter) PersistOnFile() {
 func (rc *RequestCounter) fetch60SecCount(now time.Time) int64 {
 	var count int64
 	rc.data.Range(func(key, value interface{}) bool {
-		if key.(int64) > int64(now.Add(-time.Second*time.Duration(rc.cfg.windowSizeInSeconds)).Unix()) &&
+		if key.(int64) > int64(now.Add(-time.Second*time.Duration(rc.cfg.WindowSizeInSeconds)).Unix()) &&
 			key.(int64) <= int64(now.Unix()) {
 			count += value.(int64)
 		}
@@ -89,14 +96,14 @@ func (rc *RequestCounter) store(now time.Time) {
 }
 
 // expiredRemover periodically removes expired data
-func (rc *RequestCounter) expiredRemover() {
-	ticker := time.NewTicker(time.Duration(rc.cfg.dataTTL) * time.Second)
+func (rc *RequestCounter) ExpiredRemover() {
+	ticker := time.NewTicker(time.Duration(rc.cfg.DataTTL) * time.Second)
 	defer ticker.Stop()
 
 	for range ticker.C {
 		rc.data.Range(func(key, value interface{}) bool {
 			now := time.Now()
-			if key.(int64) < int64(now.Add(-time.Second*time.Duration(rc.cfg.windowSizeInSeconds)).Unix()) {
+			if key.(int64) < int64(now.Add(-time.Second*time.Duration(rc.cfg.WindowSizeInSeconds)).Unix()) {
 				rc.data.Delete(key)
 			}
 			return true
@@ -119,4 +126,34 @@ func (rc *RequestCounter) Count(w http.ResponseWriter, req *http.Request) {
 	}
 
 	w.Write(res)
+}
+
+func convertStorageToSyncMap(storageSchema StorageSchema, rc *RequestCounter) *RequestCounter {
+
+	for _, mapData := range storageSchema.Data {
+		for key, val := range mapData {
+			rc.data.Store(key, val)
+		}
+	}
+
+	return rc
+}
+
+// LoadStorage loads the persisted data from the file
+func LoadStorage(cfg config.Config) *RequestCounter {
+	rc := RequestCounter{cfg: cfg}
+
+	storageFile, err := os.ReadFile(cfg.StoragePath)
+	if err != nil {
+		log.Println("Error opening storage file:", err)
+		return &rc
+	}
+
+	var storageSchema StorageSchema
+	if err = json.Unmarshal(storageFile, &storageSchema); err != nil {
+		log.Println("Error parsing storage file:", err)
+		return &rc
+	}
+
+	return convertStorageToSyncMap(storageSchema, &rc)
 }
