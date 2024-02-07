@@ -49,7 +49,7 @@ func TestPersistence(t *testing.T) {
 	rc.store(now.Add(-30 * time.Second)) // 30 seconds earlier
 
 	// Persist data to file
-	go rc.PersistIntervaly()
+	rc.PersistOnFile()
 	time.Sleep(time.Duration(5*cfg.PersistInterval) * time.Second)
 
 	// Load data from file
